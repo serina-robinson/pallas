@@ -1,0 +1,201 @@
+---
+title: "PALLAS"
+output:
+  flexdashboard::flex_dashboard:
+    theme: bootstrap
+    vertical_layout: fill
+    logo: www/pawprint_vector_graphic.png
+    favicon: www/pawprint_vector_graphic.png
+    social: menu
+    css: styles.css
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library("xtable")
+library("data.table")
+library("shiny")
+library("Biostrings")
+library("tidyverse")
+library("knitr")
+library("kableExtra")
+devtools::install_github('ropensci/plotly')
+```
+
+
+```{r global}
+## Read in the training set
+tab <- fread(file = "../data/20190318_full_anl_training_set.csv", header = T, data.table = F, sep = ",")
+```
+
+Home
+=====================================
+Column {.sidebar}
+-----------------------------------------------------------------------
+**Welcome to PALLAS**
+<br>
+<br>
+*Prediction tool for Adenylation, Ligase, and Luciferase Activity and Substrate specificity*
+<br>
+<br>
+Enzymes in the adenylate-forming perform diverse functions including the adenylation of amino acids in nonribosomal peptide synthases (NRPS), luciferase-catalyzed light production, and the to the activation of short, medium, and long chain fatty acids with coenzyme A (CoA). Over the past decade, the adenylate-forming superfamily has expanded to include several new classes of enzymes including the fatty-acyl AMP ligases, aryl polyene adenylation domains, and β-lactone synthetases. Most ANL enzymes activate carboxylic acid groups with AMP then catalyze thioester bond formation with a sulfur acceptor such as a phosphopantetheine group.
+<br>
+<br>
+As the number of sequences for adenylate-forming enzymes in databases far outnumber our capacity for experimental characterization, there is a need for adenylation reaction asubstrate prediction tools. As a result, the PALLAS prediction tool was developed using supervised machine learning approaches to predict substrate specificity from amino acid sequences. This tool is the product of a collaboration between [Dr. Larry Wackett’s lab](https://cbs.umn.edu/wackett-lab/home) at the University of Minnesota and Dr. Marnix Medema's lab at Wageningen University and Research, the Netherlands. 
+<br>
+<br>
+We gratefully acknowledge support from a National Science Foundation graduate resesarch fellowship to SLR funding this work.
+<br>
+<br>
+Last updated: March 17, 2019
+
+Column
+-----------------------------------------------------------------------
+Please note: this tool is still under construction.
+
+```{r}
+ # Input: Select a file ----
+fileInput("file1", "Choose a FASTA File", multiple = FALSE)
+
+# Horizontal line ----
+tags$hr()
+
+# Input: Select separator ----
+radioButtons("seqtype", "Sequence type",
+             choices = c(Nucleotide = "nuc",
+                         Protein = "aa"),
+             selected = "aa")
+
+renderTable({
+
+    # input$file1 will be NULL initially. After the user selects
+    # and uploads a file, head of that data file by default,
+    # or all rows if selected, will be shown.
+
+    req(input$file1)
+
+    # when reading semicolon separated files,
+    # having a comma separator causes `read.csv` to error
+    tryCatch(
+      {
+        if(input$seqtype == "aa") {
+          return(readAAStringSet(input$file1$datapath))
+        }
+        else {
+          return(readDNAStringSet(input$file1$datapath))
+        }
+
+      })
+},
+  error = function(e) {
+    # return a safeError if a parsing error occurs
+    stop(safeError(e))
+  }
+  )
+```
+
+Resources
+===================================== 
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+**Welcome to PALLAS**
+<br>
+<br>
+*Prediction tool for Adenylation, Ligase, and Luciferase Activity and Substrate specificity*
+<br>
+<br>
+Enzymes in the adenylate-forming perform diverse functions including the adenylation of amino acids in nonribosomal peptide synthases (NRPS), luciferase-catalyzed light production, and the to the activation of short, medium, and long chain fatty acids with coenzyme A (CoA). Over the past decade, the adenylate-forming superfamily has expanded to include several new classes of enzymes including the fatty-acyl AMP ligases, aryl polyene adenylation domains, and β-lactone synthetases. Most ANL enzymes activate carboxylic acid groups with AMP then catalyze thioester bond formation with a sulfur acceptor such as a phosphopantetheine group.
+<br>
+<br>
+As the number of sequences for adenylate-forming enzymes in databases far outnumber our capacity for experimental characterization, there is a need for adenylation reaction asubstrate prediction tools. As a result, the PALLAS prediction tool was developed using supervised machine learning approaches to predict substrate specificity from amino acid sequences. This tool is the product of a collaboration between [Dr. Larry Wackett’s lab](https://cbs.umn.edu/wackett-lab/home) at the University of Minnesota and Dr. Marnix Medema's lab at Wageningen University and Research, the Netherlands. 
+<br>
+<br>
+We gratefully acknowledge support from a National Science Foundation graduate resesarch fellowship to SLR funding this work.
+<br>
+<br>
+Last updated: March 17, 2019
+
+
+Inputs
+-----------------------------------------------------------------------
+**Relevant Scientific Publications on Adenlyate-forming enzymes**
+  
+1. Gulick, A. M. (2009). [Conformational Dynamics in the Acyl-CoA Synthetases, Adenylation Domains of Non-Ribosomal Peptide Synthetases, and Firefly Luciferase.](https://pubs.acs.org/doi/10.1021/cb900156h) *ACS Chemical Biology* 2009, 4(10), 811-827. [doi: 10.1021/cb900156h.](https://pubs.acs.org/doi/10.1021/cb900156h)
+  
+**Publications Specific to β-Lactone Synthetases**
+
+1. Robinson, SL, Christenson, JK, Richman, JE, Jenkins, DJ, Neres, J, Fonseca, DR, Aldrich, CC, Wackett, LP (2019). [Mechanism of a Standalone β-Lactone Synthetase: New Continuous Assay for a Widespread ANL Superfamily Enzyme.](https://onlinelibrary.wiley.com/doi/abs/10.1002/cbic.201800821) *ChemBioChem* 2019, [Epub ahead of print]. [doi: 10.1002/cbic.201800821.](https://onlinelibrary.wiley.com/doi/abs/10.1002/cbic.201800821)    
+
+2. Christenson JK, Richman JE, Jensen MR, Neufeld JY, Wilmot CM, Wackett LP. [**β-Lactone Synthetase Found in the Olefin Biosynthesis Pathway.**](http://pubs.acs.org/doi/abs/10.1021/acs.biochem.6b01199) *Biochemistry* 2017, 56(2):348-51.  [doi:10.1021/acs.biochem.6b01199.](http://pubs.acs.org/doi/abs/10.1021/acs.biochem.6b01199)    
+
+Database
+===================================== 
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+<br>
+<br>
+Training set database of adenylate-forming enzymes paired with substrate. 
+```{r}
+
+      selectizeInput("substrate_group", "Search by substrate group:",
+                    choices = tab$substrate_group,
+                    selected = "luciferase", multiple = TRUE
+      )
+      
+      selectizeInput("functional_class", "Search by enzyme functional class:",
+                    choices = tab$functional_class,
+                    selected = NULL, multiple = TRUE
+      )
+
+       selectizeInput("likely_substrate", "Search by specific substrate:",
+                    choices = tab$likely_substrate,
+                    selected = NULL, multiple = TRUE
+      )
+      
+      selectizeInput("organism", "Search by organism:",
+                   choices = tab$organism,
+                   selected = NULL, multiple = TRUE
+      )
+```
+
+Outputs
+-----------------------------------------------------------------------
+```{r}   
+ renderTable({
+      srch <- tab[tab$likely_substrate %in% input$likely_substrate,]
+      cmpd <- tab[tab$substrate_group %in% input$substrate_group,]
+      tax <- tab[tab$organism %in% input$organism,]
+      out <- data.frame(rbind(cmpd, tax, srch))
+      dedup <- out[!duplicated(out),]
+      # out_tab <- dedup %>%
+      #          knitr::kable("html") %>%
+      #          kable_styling(bootstrap_options = c("striped", "hover","condensed","responsive"),full_width = F,position="left",font_size=10) %>%
+      #          scroll_box(height = "1000px", width = "2000px")
+      return(xtable(dedup))
+    })
+```   
+
+About
+=====================================
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+<br>
+<br>
+<br> 
+
+Main
+-----------------------------------------------------------------------
+This tool is the product of a collaboration between [Dr. Larry Wackett’s lab](https://cbs.umn.edu/wackett-lab/home) at the University of Minnesota and Dr. Marnix Medema's lab at Wageningen University and Research, the Netherlands.
+<br>
+<br>
+This material is based upon work supported by the National Science Foundation Graduate Research Fellowship under Grant No. 00039202 to SLR.
+<br>
+<br> 
+Disclaimer: Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation.
+<br>
+<br>
+**Questions, Comments, or Suggestions?**
+Please [contact us](mailto:www.robinsonserinalee@gmail.com)!
