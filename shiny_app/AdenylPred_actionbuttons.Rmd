@@ -1,0 +1,371 @@
+---
+title: "AdenylPred"
+output:
+  flexdashboard::flex_dashboard:
+    theme: cerulean
+    vertical_layout: fill
+    logo: www/Lightning_Bolt_on_Circle.svg
+    favicon: www/Lightning_Bolt_on_Circle.svg
+    social: menu
+    css: bootstrap.css
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library("xtable")
+library("dplyr")
+library("data.table")
+library("shiny")
+library("Biostrings")
+library("tidyverse")
+library("knitr")
+library("kableExtra")
+library("readxl")
+library("DECIPHER")
+library("ranger")
+library("muscle")
+library("DT")
+```
+
+```{r global}
+## Read in the training set
+## setwd("/Users/robi0916/Documents/Wageningen_UR/github/pallas/shiny_app")
+# source("src/extract_34_aa.r")
+source("src/extract_34_aa_loop.r")
+tab <- read_excel("data/combined_adenylate_forming_training_set_for_db_20191104.xlsx")
+subkey <- read_excel("data/substrate_key.xlsx")
+```
+
+Home
+=====================================
+Column {.sidebar}
+-----------------------------------------------------------------------
+**Welcome to AdenylPred**
+<br>
+<br>
+*Prediction tool for functional classification and substrate specificity of class I adenylate-forming enzymes*
+<br>
+<br>
+AdenylPred uses supervised machine learning approaches to predict substrate specificity from amino acid sequences. 
+<br>
+<br>
+This tool is the product of a collaboration between [Dr. Larry Wackett’s lab](https://cbs.umn.edu/wackett-lab/home) at the University of Minnesota and Dr. Marnix Medema's lab at Wageningen University and Research, the Netherlands. 
+<br>
+<br>
+Enzymes in the class I adenylate-forming enzyme superfamily perform diverse functions including the adenylation of amino acids in nonribosomal peptide synthases (NRPS), luciferase-catalyzed light production, and the activation of short, medium, and long chain fatty acids with coenzyme A (CoA). 
+<br>
+<br>
+Over the past decade, the adenylate-forming superfamily has expanded to include several new classes of enzymes including the fatty-acyl AMP ligases, aryl polyene adenylation domains, and β-lactone synthetases. Most ANL enzymes activate carboxylic acid groups with AMP then catalyze thioester bond formation with a sulfur acceptor such as a phosphopantetheine group.
+<br>
+<br>
+As the number of sequences for adenylate-forming enzymes in databases far outnumber our capacity for experimental characterization, there is a need for adenylation enzyme substrate prediction tools. As a result, AdenylPred was developed using supervised machine learning approaches to predict substrate specificity from amino acid sequences. 
+<br>
+<br>
+This tool is the product of a collaboration between [Dr. Larry Wackett’s lab](https://cbs.umn.edu/wackett-lab/home) at the University of Minnesota and Dr. Marnix Medema's lab at Wageningen University and Research, the Netherlands. 
+<br>
+<br>
+We gratefully acknowledge support from a National Science Foundation graduate research fellowship to SLR funding this work.
+<br>
+<br>
+Last updated: May 2, 2019
+
+Column
+-----------------------------------------------------------------------
+```{r}
+ # Input: Select a file ----
+fileInput("file1", "Choose a FASTA File*", multiple = FALSE) 
+
+splitLayout(
+  cellWidths = 155,
+  cellArgs = list(style = "padding: 5px"),
+  actionButton("run", "Run Analysis", icon("paper-plane")),
+  downloadButton("example", "Example FASTA", icon("file-download"))
+)
+
+# Horizontal line ----
+tags$hr()
+
+# Download button
+downloadButton("downloadData", "Download", class = "download_this", width = '30%')
+
+# Input: Select sequence type----
+radioButtons("seqtype", "Sequence type",
+             choices = c(Nucleotide = "nuc",
+                         Protein = "aa"),
+             selected = "aa")
+
+# Downloadable example FASTA file ----
+output$example <- downloadHandler(
+    filename = function() {
+      paste0("example.fasta", sep = "")
+    },
+    content = function(file) {
+      samp_fil <- readAAStringSet("data/test1.faa")
+      writeXStringSet(samp_fil, file)
+    }
+  )
+
+# Downloadable csv of selected dataset ----
+downloadHandler(
+      filename = function() {
+        paste0("AdenylPred-", Sys.Date(), ".csv", sep = "")
+      },
+      content = function(file) {
+        write.csv(mytab(), file, row.names = FALSE)
+      }
+    )
+
+mytab <- eventReactive(input$run, { 
+  
+withProgress(message = 'Processing... Please wait', {
+
+    # Input file
+    req(input$file1)
+    observeEvent(input$example, {
+    })
+
+    tryCatch(
+      {
+         if(input$seqtype == "aa") {
+          sqs <- readAAStringSet(input$file1$datapath)
+          if(length(sqs) > 100) {
+            ret <- data.frame("Error: please input less than 100 sequences")
+            colnames(ret) <- ""
+            return(ret)
+          }
+         }
+           else {
+          sqs_dna <- readDNAStringSet(input$file1$datapath)
+          # if(!sqs_dna %in% c("A", "G", "T", "C", "N")) {
+          #   ret <- data.frame("Error: not a valid DNA sequence")
+          #   colnames(ret) <- ""
+          #   return(ret)
+          # }
+          sqs <- translate(sqs_dna, if.fuzzy.codon = "error")
+          if(length(sqs) > 100) {
+            ret <- data.frame("Error: please input less than 100 sequences")
+            colnames(ret) <- ""
+          }
+        }
+
+          query_fils <- sapply(1:length(sqs), function(x) {tempfile(pattern = "", fileext = ".fasta")})
+          sapply(1:length(sqs), function(x) {writeXStringSet(sqs[x], query_fils[x])})
+          source("src/extract_34_aa_loop.R")
+          extract_34_list <- lapply(1:length(sqs), function(x) { extract_34_aa_loop(query_fils[x]) })
+          extract_34_df <- data.frame(matrix(unlist(extract_34_list), nrow = length(extract_34_list), byrow=T), 
+                                      stringsAsFactors=FALSE)
+          colnames(extract_34_df)[1:510] <- as.character(fread("data/feature_names.txt", data.table = F)[,1])
+          write_csv(extract_34_df, "output/test_extracted.csv")
+          
+          # Predict functional class
+          # rf_funct_class <- readRDS("data/rf_functional_class_1000trees_probability.rds")
+          rf_funct_class <- readRDS("data/20190305_rf_fullset_fc_noxval.rds")
+          newdat <- read_csv("output/test_extracted.csv")
+          rf_funct_class_pred <- predict(rf_funct_class, data = newdat, predict.all = F)
+          rf_fc_pred <- rf_funct_class_pred$predictions
+          res_fc_prob <- apply(rf_fc_pred, 1, max)
+          res_fc <- tibble(colnames(rf_fc_pred)[apply(rf_fc_pred, 1, which.max)]) 
+          res_long <- case_when(res_fc == "LACS" ~ "Long chain acyl-CoA synthetase",
+                                res_fc == "MACS" ~ "Medium chain acyl-CoA synthetase",
+                                res_fc == "SACS" ~ "Short chain acyl-CoA synthetase",
+                                res_fc == "BLS" ~ "β-lactone synthetase",
+                                res_fc == "LUCIFERASE" ~ "Firefly luciferase",
+                                res_fc == "ARYL" ~ "Aryl-CoA ligase",
+                                res_fc == "NRPS" ~ "Nonribosomal peptide synthetase",
+                                res_fc == "FAAL" ~ "Fatty-acyl AMP ligase",
+                                res_fc == "VLACSBILE" ~ "Very-long chain and bile acyl-CoA synthetase",
+                                TRUE ~ "")
+
+          # Predict small substrate
+          # rf_small_sub <- readRDS("data/rf_substrate_group_1000trees_probability.rds")
+          rf_small_sub <- readRDS("data/20190305_rf_fullset_ss_noxval.rds")
+          rf_small_sub_pred <- predict(rf_small_sub, data = newdat, predict.all = F)
+          rf_ss_pred <- rf_small_sub_pred$predictions
+          print(dim(rf_ss_pred))
+          res_ss_prob <- apply(rf_ss_pred, 1, max)
+          res_ss <- colnames(rf_ss_pred)[apply(rf_ss_pred, 1, which.max)]
+          res_ss <- gsub("\\.", " ", res_ss)
+          res_ss <- gsub("aa", " amino acid", res_ss)
+
+          # Create a data frame of returns
+          pred_df <- data.frame(names(sqs), res_long, round(res_fc_prob, 2), res_ss, round(res_ss_prob, 2), stringsAsFactors = F)
+          colnames(pred_df) <- c("Query name", "Predicted functional class (FC)", "FC prediction probability",
+                                 "Predicted substrate specificity (SS)", "SS prediction probability")
+          return(pred_df)
+},
+  error = function(e) {
+    # return a safeError if a parsing error occurs
+    stop(safeError(e))
+  }
+  )
+})
+})
+
+# DT::renderDataTable({ 
+#   display_data <- DT::datatable(mytab())
+#   # options = list(rowCallback = JS("function(row, data) {",
+#   #                                 "var full_text = 'This row's values are:' + data[0] + ',' + data[1] + '...'", "$('td', row).attr('title', full_text);", "}")))
+#   # options = list(rowCallback = JS("function(nRow, aData, iDisplayIndex, iDisplayIndexFull) {",
+#   #                                 "var full_text = aData[1] + ',' + aData[2]",
+#   #                                 "$('td:eq(1)', nRow).attr('title', full_text);",
+#   #                                 "}")))
+#                                   # columnDefs = list(className = 'dt-center', targets = "_all")), selection = 'single')
+#                                   
+#   })
+renderTable({ mytab() }, align = 'c')
+```
+<br>
+*This is a lightweight web app that cannot handle high computational loads. Please limit your analysis to 100 sequences. 
+If you wish to analyze more sequences, please consider downloading AdenylPred:
+* [AdenylPred on Github](http://github.com/serina-robinson/adenylpred)
+
+<div style="width:20px; height:20px">
+[![](www/github_logo.svg)](http://github.com/serina-robinson/adenylpred)
+</div>
+
+
+Substrate Groups
+=====================================
+Column {.sidebar data-width=350}
+-----------------------------------------------------------------------
+Due to lack of sufficient experimental training data for the exact substrate specificity of some adenylate-forming enzyme subfamilies, we are only able to predict at the level of "substrate group."
+
+```{r}
+my_list <- list()
+my_list <- lapply(1:nrow(subkey), function(x) { my_list[[x]] <- x })
+names(my_list) <- subkey$`Substrate group name`
+
+radioButtons("radio_substrate_group", "Sequence type",
+             choices = my_list)
+```
+
+Main
+-----------------------------------------------------------------------
+```{r}
+
+rv <- reactiveValues(data = data.frame(subkey)[1,], img = "www/grp1.png")
+
+observeEvent(input$radio_substrate_group, {
+    ind <- as.numeric(input$radio_substrate_group)
+    rv$data <- data.frame(subkey)[ind,]
+    rv$img <- paste0("www/grp", ind, ".png")
+})
+
+output$img <- renderImage({
+   list(src = rv$img)
+}, deleteFile = FALSE)
+
+renderTable({
+  rv$data
+})
+
+imageOutput("img", width = "60%", height = "50%")
+```
+
+
+Resources
+===================================== 
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+**Welcome to AdenylPred**
+<br>
+<br>
+*Prediction tool for functional classification and substrate specificity of class I adenylate-forming enzymes*
+<br>
+<br>
+Enzymes in the class I adenylate-forming enzyme superfamily perform diverse functions including the adenylation of amino acids in nonribosomal peptide synthases (NRPS), luciferase-catalyzed light production, and the activation of short, medium, and long chain fatty acids with coenzyme A (CoA). 
+<br>
+<br>
+Over the past decade, the adenylate-forming superfamily has expanded to include several new classes of enzymes including the fatty-acyl AMP ligases, aryl polyene adenylation domains, and β-lactone synthetases. Most ANL enzymes activate carboxylic acid groups with AMP then catalyze thioester bond formation with a sulfur acceptor such as a phosphopantetheine group.
+<br>
+<br>
+As the number of sequences for adenylate-forming enzymes in databases far outnumber our capacity for experimental characterization, there is a need for adenylation enzyme substrate prediction tools. As a result, AdenylPred was developed using supervised machine learning approaches to predict substrate specificity from amino acid sequences. 
+<br>
+<br>
+This tool is the product of a collaboration between [Dr. Larry Wackett’s lab](https://cbs.umn.edu/wackett-lab/home) at the University of Minnesota and Dr. Marnix Medema's lab at Wageningen University and Research, the Netherlands. 
+<br>
+<br>
+We gratefully acknowledge support from a National Science Foundation graduate research fellowship to SLR funding this work.
+<br>
+<br>
+Last updated: April 29, 2019
+
+Inputs
+-----------------------------------------------------------------------
+**Relevant Scientific Publications on Adenlyate-forming enzymes**
+  
+1. Gulick, A. M. (2009). [Conformational Dynamics in the Acyl-CoA Synthetases, Adenylation Domains of Non-Ribosomal Peptide Synthetases, and Firefly Luciferase.](https://pubs.acs.org/doi/10.1021/cb900156h) *ACS Chemical Biology* 2009, 4(10), 811-827. [doi: 10.1021/cb900156h.](https://pubs.acs.org/doi/10.1021/cb900156h)
+  
+**Publications Specific to β-Lactone Synthetases**
+
+1. Robinson, SL, Christenson, JK, Richman, JE, Jenkins, DJ, Neres, J, Fonseca, DR, Aldrich, CC, Wackett, LP (2019). [Mechanism of a Standalone β-Lactone Synthetase: New Continuous Assay for a Widespread ANL Superfamily Enzyme.](https://onlinelibrary.wiley.com/doi/abs/10.1002/cbic.201800821) *ChemBioChem* 2019, [Epub ahead of print]. [doi: 10.1002/cbic.201800821.](https://onlinelibrary.wiley.com/doi/abs/10.1002/cbic.201800821)    
+
+2. Christenson JK, Richman JE, Jensen MR, Neufeld JY, Wilmot CM, Wackett LP. [β-Lactone Synthetase Found in the Olefin Biosynthesis Pathway.](http://pubs.acs.org/doi/abs/10.1021/acs.biochem.6b01199) *Biochemistry* 2017, 56(2):348-51.  [doi:10.1021/acs.biochem.6b01199.](http://pubs.acs.org/doi/abs/10.1021/acs.biochem.6b01199)    
+
+Database
+===================================== 
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+<br>
+<br>
+Training set database of adenylate-forming enzymes paired with substrate. 
+```{r}
+
+      selectizeInput("small_substrate_group", "Search by substrate group:",
+                    choices = tab$small_substrate_group,
+                    selected = "luciferase", multiple = TRUE
+      )
+      
+      selectizeInput("functional_class", "Search by enzyme functional class:",
+                    choices = tab$functional_class,
+                    selected = NULL, multiple = TRUE
+      )
+
+       selectizeInput("likely_substrate", "Search by specific substrate:",
+                    choices = tab$substrate,
+                    selected = NULL, multiple = TRUE
+      )
+      
+      selectizeInput("organism", "Search by organism:",
+                   choices = tab$organism,
+                   selected = NULL, multiple = TRUE
+      )
+```
+
+Outputs
+-----------------------------------------------------------------------
+```{r}   
+ DT::renderDataTable({
+      srch <- tab[tab$substrate %in% input$likely_substrate,]
+      funct <- tab[tab$functional_class %in% input$functional_class,]
+      cmpd <- tab[tab$small_substrate_group %in% input$small_substrate_group,]
+      tax <- tab[tab$organism %in% input$organism,]
+      out <- data.frame(rbind(cmpd, tax, funct, srch))
+      dedup <- out[!duplicated(out),]
+
+      return(xtable(dedup))
+    })
+```   
+
+About
+=====================================
+Main
+-----------------------------------------------------------------------
+**Welcome to AdenylPred**
+<br>
+<br>
+This tool is the product of a collaboration between [Dr. Larry Wackett’s lab](https://cbs.umn.edu/wackett-lab/home) at the University of Minnesota and Dr. Marnix Medema's lab at Wageningen University and Research, the Netherlands.
+<br>
+<br>
+This material is based upon work supported by the National Science Foundation Graduate Research Fellowship under Grant No. 00039202 to SLR.
+<br>
+<br> 
+Disclaimer: Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation.
+<br>
+<br>
+**Questions, Comments, or Suggestions?**
+Please [contact us](mailto:www.robinsonserinalee@gmail.com)!
+
+
